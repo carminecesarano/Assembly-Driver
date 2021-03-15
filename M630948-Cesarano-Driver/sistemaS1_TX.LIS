@@ -1,0 +1,179 @@
+00000000                                     1  
+00000000                                     2  **********AREA DATI*********************************************************************************************
+00000000                                     3  
+00008000                                     4  	ORG	$8000
+00008000                                     5  	
+00008000                                     6  ************TESTING******************
+00008000                                     7  *MSG1		DC.B	1,2,3,4			*
+00008000                                     8  *MSG2		DC.B	5,6,7,8			*
+00008000                                     9  *ECO1		DS.B	4				*
+00008000                                    10  *ECO2		DS.B	4				*
+00008000                                    11  *DIM		DC.B	4				*
+00008000                                    12  *************************************	
+00008000                                    13  	
+00008000                                    14  	
+00008000  01 02 03 04 05 06 07 08 09 ...    15  MSG1		DC.B	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32
+00008020  20 1F 1E 1D 1C 1B 1A 19 18 ...    16  MSG2		DC.B	32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1
+00008040                                    17  ECO1		DS.B	32
+00008060                                    18  ECO2		DS.B	32
+00008080                                    19  
+00008080  20                                20  DIM			DC.B	32		;dimensione del singolo messaggio
+00008081  02                                21  MSGTOT		DC.B	2 		;totale dei messaggi (di 32byte) da inviare 
+00008082  00                                22  MSGINV		DC.B	0 		;contatore messaggi (di 32byte) inviati 
+00008083  00                                23  CONT		DC.B	0		;contatore dei caratteri di eco ricevuti nell'ambito del messaggio(si azzera ogni 32)
+00008084                                    24  
+00008084  00                                25  ECOCHAR		DC.B	0		;offset dell'area di memoria ECO1 per salvare i caratteri ricevuti
+00008085                                    26  
+00008085                                    27  
+00008085  01                                28  FLAG		DC.B	1		;flag che indica la ricezione di tutti i caratteri ECO e abilita la trasmissione di un nuovo messaggio
+00008086                                    29  
+00008086                                    30  
+00008086                                    31  ***********AREA MAIN**********************************************************************************************
+00008086                                    32  
+00008200                                    33  	ORG    $8200
+00008200                                    34  
+00008200  =00002002                         35  USARTD		EQU		$2002		;registro dato USART
+00008200  =00002003                         36  USARTC		EQU		$2003		;registro di controllo USART
+00008200  =00002004                         37  PIADA		EQU   	$2004		;indirizzo di PIA-A dato, usato in input
+00008200  =00002005                         38  PIACA		EQU    	$2005		;indirizzo di PIA-A stato/controllo
+00008200                                    39  
+00008200                                    40  MAIN	
+00008200  4EB9 00008288                     41  	JSR	INITUSART	;inizializzazione USART
+00008206  4EB9 00008296                     42  	JSR	INITPIA		;inizializzazione PIA
+0000820C                                    43  
+0000820C  40C0                              44  	MOVE.W	SR,D0		;legge il registro di stato
+0000820E  0240 D8FF                         45  	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+00008212  46C0                              46  	MOVE.W	D0,SR		;pone liv int a 000
+00008214                                    47  
+00008214                                    48  
+00008214                                    49  	* salvataggio indirizzi utili nei registri interni
+00008214  227C 00002002                     50  	MOVEA.L	#USARTD,A1	
+0000821A  247C 00002003                     51  	MOVEA.L	#USARTC,A2	
+00008220  207C 00008000                     52  	MOVEA.L	#MSG1,A0	
+00008226  1639 00008080                     53  	MOVE.B	DIM,D3			;dimensione singolo messaggio 
+0000822C  1A39 00008081                     54  	MOVE.B 	MSGTOT,D5		;messaggi totale da trasmettere
+00008232  1C39 00008082                     55  	MOVE.B 	MSGINV,D6		;contatore messaggi correntemente inviati 
+00008238                                    56  
+00008238  4241                              57  	CLR	D1	;appoggio
+0000823A  4242                              58  	CLR	D2	;contatore caratteri trasmessi
+0000823C                                    59  	
+0000823C                                    60  
+0000823C                                    61  CHECKDSR	
+0000823C  1012                              62  	MOVE.B	(A2),D0			;Controlla se è attivato il segnale DSR della USART ed in caso affermativo trasmette,
+0000823E  0200 0080                         63  	ANDI.B	#$80,D0			;altrimenti attende. Poichè la configurazione prevede che DTR=1
+00008242  67F8                              64  	BEQ	CHECKDSR
+00008244                                    65  	
+00008244                                    66  
+00008244                                    67  STOP
+00008244  1839 00008085                     68  	MOVE.B FLAG,D4		;lettura del flag che abilita la trasmissione. 
+0000824A  0C44 0001                         69  	CMPI #1,D4				
+0000824E  66F4                              70  	BNE STOP			;Attendiamo fin quando l'ECO non è stato completamente ricevuto	
+00008250                                    71  	
+00008250  0244 0000                         72  	ANDI #$00,D4		;Altrimenti setto il flag a 0
+00008254  13C4 00008085                     73  	MOVE.B D4,FLAG
+0000825A                                    74  
+0000825A  BC45                              75  	CMP D5,D6			;Se ho trasmesso 2 messaggi mi metto in loop, altrimenti prosegue con la trasmissione
+0000825C  6700 0024                         76  	BEQ LOOP
+00008260                                    77  	
+00008260                                    78  	
+00008260                                    79  CHECKTxRDY	
+00008260  1012                              80  	MOVE.B	(A2),D0		;Controlla se è attivo TxRDY, che indica che la seriale è pronta a trasmettere un nuovo carattere
+00008262  0200 0001                         81  	ANDI.B	#$01,D0		
+00008266  67F8                              82  	BEQ		CHECKTxRDY		
+00008268                                    83  
+00008268  1218                              84  	MOVE.B	(A0)+,D1
+0000826A  1281                              85  	MOVE.B	D1,(A1)		;invio il carattere sulla porta DATO della seriale
+0000826C  5202                              86  	ADD.B	#1,D2		;incremento il contatore dei caratteri trasmessi
+0000826E                                    87  	
+0000826E  B642                              88  	CMP	D2,D3
+00008270  66EE                              89  	BNE	CHECKTxRDY
+00008272                                    90  
+00008272                                    91  	
+00008272  4242                              92  	CLR	D2 				;azzero il contatore dei caratteri trasmessi (il cont è riferito al singolo messaggio)  
+00008274                                    93  
+00008274  5206                              94  	ADDI.B 	#$01,D6		
+00008276  13C6 00008082                     95  	MOVE.B 	D6,MSGINV	;incremento il contatore dei messaggi inviati
+0000827C  4EF9 00008244                     96  	JMP 	STOP		;mi metto in attesa che il flag abiliti la prossima trasmissione
+00008282                                    97  
+00008282  4EF9 00008282                     98  LOOP	JMP	LOOP
+00008288                                    99  
+00008288                                   100  ***********INIZIALIZZAZIONE PERIFERICHE****************************************************************************
+00008288                                   101  
+00008288                                   102  INITUSART	
+00008288  11FC 005D 2003                   103  	MOVE.B	#$5D,USARTC		;trasmissione asincrona, 8 bit di informazione bit di parità dispari e 2 bit di stop.  (registro MODE)
+0000828E  11FC 0023 2003                   104  	MOVE.B	#$23,USARTC		;abilita il trasmettitore e attiva i segnali di handshaking. (registro CONTROL)
+00008294  4E75                             105  	RTS
+00008296                                   106  
+00008296                                   107  INITPIA
+00008296  11FC 0000 2005                   108  	MOVE.B	#0,PIACA			;0 nel registro controllo: il prossimo accesso a PIADA (indirizzo pari) seleziona il registro direzione del porto A
+0000829C  11FC 0000 2004                   109  	MOVE.B	#$00,PIADA		    ;accede a DRA e pone DRA=0: le linee di A sono linee di input	
+000082A2  11FC 0025 2005                   110  	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo ponendo IRQA1=1 e IRQA2=1
+000082A8  4E75                             111  	RTS
+000082AA                                   112  
+000082AA                                   113  
+000082AA                                   114  ***********ISR INTERRUZIONE PIA-A***********************************************************************************
+000082AA                                   115  * La pia-A ha ricevuto un carattere dalla pia-B partner. 
+000082AA                                   116  * Interrupt di liv. 5, mappata sull'autovettore 29, indirizzo $74 della ROM, dove salvo l'entry della ISR ($8700)
+000082AA                                   117  ********************************************************************************************************************	
+000082AA                                   118  	
+00008700                                   119  	ORG $8700		
+00008700                                   120  
+00008700                                   121  INT3    	
+00008700  2F09                             122  	MOVE.L  A1,-(A7)		;salvataggio registri
+00008702  2F08                             123  	MOVE.L  A0,-(A7)
+00008704  2F00                             124  	MOVE.L  D0,-(A7)
+00008706  2F01                             125  	MOVE.L  D1,-(A7)
+00008708  2F02                             126  	MOVE.L  D2,-(A7)
+0000870A  2F03                             127  	MOVE.L  D3,-(A7)
+0000870C                                   128  
+0000870C                                   129  	* salvataggio indirizzi utili nei registri interni
+0000870C  227C 00002004                    130  	MOVEA.L	#PIADA,A1
+00008712  207C 00008040                    131  	MOVEA.L	#ECO1,A0			;indirizzo di partenza area salvataggio ECO
+00008718  1039 00008084                    132  	MOVE.B	ECOCHAR,D0			;offset per salvare l'eco ricevuto nell'area di memoria ECO1
+0000871E  1239 00008080                    133  	MOVE.B DIM,D1				;dim del singolo messaggio (32)
+00008724  1439 00008085                    134  	MOVE.B FLAG,D2				;flag che indica la completa ricezione dell'eco e abilita la successiva trasmissione
+0000872A  1639 00008083                    135  	MOVE.B CONT,D3				;contatore dei caratteri di eco ricevuti (si azzera ogni 32)
+00008730                                   136  	
+00008730  1191 0000                        137  	MOVE.B 	(A1),(A0,D0)	;acquisisce il carattere e lo trasferisce in memoria
+00008734                                   138  	
+00008734  5200                             139  	ADD.B	#1,D0			
+00008736  5203                             140  	ADD.B 	#1,D3			
+00008738  13C0 00008084                    141  	MOVE.B	D0,ECOCHAR		;incrementa l'offset
+0000873E  13C3 00008083                    142  	MOVE.B	D3,CONT			;incrementa il contatore dei char ricevuti
+00008744                                   143  
+00008744                                   144  
+00008744  B243                             145  	CMP	D3,D1				;se abbiamo ricevuto 32 char, setta il flag ad 1
+00008746  6600 0014                        146  	BNE	FINE
+0000874A                                   147  
+0000874A  13FC 0000 00008083               148  	MOVE.B	#$00,CONT		;azzeramento contatore di messaggio
+00008752  0042 0001                        149  	ORI 	#$01,D2			;set flag a 1
+00008756  13C2 00008085                    150  	MOVE.B 	D2,FLAG		
+0000875C                                   151  	
+0000875C                                   152  
+0000875C                                   153  FINE	
+0000875C  261F                             154  	MOVE.L  (A7)+,D3		;ripristino registri 
+0000875E  241F                             155  	MOVE.L  (A7)+,D2
+00008760  221F                             156  	MOVE.L  (A7)+,D1
+00008762  201F                             157  	MOVE.L  (A7)+,D0		
+00008764  205F                             158  	MOVE.L  (A7)+,A0
+00008766  225F                             159  	MOVE.L  (A7)+,A1
+00008768                                   160  	
+00008768  4E73                             161  	RTE
+0000876A                                   162  
+0000876A                                   163  
+0000876A                                   164  
+0000876A                                   165  ********ISR INTERRUZIONE USART*******************************************************************
+0000876A                                   166  * Non è possibile disabilitare le interrupt sulla USAR in trasmissione dunque prevediamo un NOP
+0000876A                                   167  * Interrupt di liv. 4, mappata sull'autovettore 28, indirizzo $70 della ROM, dove salvo l'entry della ISR ($8800)
+0000876A                                   168  *************************************************************************************************
+0000876A                                   169  
+00008800                                   170  	ORG $8800		
+00008800  4E71                             171  	NOP
+00008802  4E73                             172  	RTE
+00008804                                   173  
+00008804                                   174  
+00008804                                   175  
+00008804                                   176  	END	MAIN
+
+No errors detected
+No warnings generated

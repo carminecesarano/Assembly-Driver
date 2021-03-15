@@ -1,0 +1,133 @@
+00000000                                     1  **********AREA DATI**********************************************************************************
+00000000                                     2  	
+00008000                                     3  	ORG	$8000
+00008000                                     4  	
+00008000                                     5  *******TESTING***************
+00008000                                     6  *MSG			DS.B	4	*	
+00008000                                     7  *DIM			DC.B	4	*
+00008000                                     8  *****************************
+00008000                                     9  
+00008000                                    10  MSG			DS.B	32		*area di memoria appoggio per il messaggio da inoltrare ad S1
+00008020  20                                11  DIM			DC.B	32		*dimensione del singolo messaggio
+00008021  00                                12  COUNT		DC.B	0 		*contatore dei caratteri ricevuti nell'ambito del messaggio (si azzera ogni 32)
+00008022                                    13  
+00008022                                    14  ***********AREA MAIN**********************************************************************************
+00008200                                    15  	ORG    $8200
+00008200                                    16  
+00008200  =00002002                         17  USARTD	EQU    $2002	;indirizzo dato
+00008200  =00002003                         18  USARTC	EQU    $2003	;indirizzo stato/controllo
+00008200  =00002006                         19  PIADB	EQU    $2006	;indirizzo di PIA-B dato, usato in output 
+00008200  =00002007                         20  PIACB	EQU    $2007	;indirizzo di PIA-B controllo
+00008200                                    21  
+00008200                                    22  MAIN	
+00008200  4EB9 00008228                     23  	JSR	INITUSART	;inizializzazione USART
+00008206  4EB9 00008236                     24  	JSR	INITPIA		;inizializzazione PIA
+0000820C                                    25  
+0000820C  40C0                              26  	MOVE.W	SR,D0		;legge il registro di stato
+0000820E  0240 D8FF                         27  	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+00008212  46C0                              28  	MOVE.W	D0,SR		;pone liv int a 000
+00008214                                    29  
+00008214  247C 00002003                     30  	MOVEA.L	#USARTC,A2	;indirizzo registro controllo/stato
+0000821A                                    31  
+0000821A                                    32  
+0000821A                                    33  CHECKDSR	
+0000821A  1012                              34  	MOVE.B	(A2),D0			;Controlla se è attivato il segnale DSR della USART ed in caso affermativo trasmette,
+0000821C  0200 0080                         35  	ANDI.B	#$80,D0			;altrimenti attende. Poichè la configurazione prevede che DTR=1
+00008220  67F8                              36  	BEQ	CHECKDSR		
+00008222                                    37  
+00008222                                    38  
+00008222  4EF9 00008222                     39  LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+00008228                                    40  	
+00008228                                    41  
+00008228                                    42  
+00008228                                    43  *********INIZIALIZZAZIONE PERIFERICHE*******************************************************************
+00008228                                    44  
+00008228                                    45  INITUSART	
+00008228  11FC 005D 2003                    46  	MOVE.B	#$5D,USARTC		;trasmissione asincrona, 8 bit di informazione bit di parità dispari e 2 bit di stop.  (registro MODE)
+0000822E  11FC 0036 2003                    47  	MOVE.B	#$36,USARTC		;abilita ricevitore, cancella flags
+00008234  4E75                              48  	RTS
+00008236                                    49  
+00008236                                    50  INITPIA	
+00008236  11FC 0000 2007                    51  	MOVE.B	#0,PIACB			;seleziona il registro direzione di PIA porto B 
+0000823C  11FC 00FF 2006                    52  	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+00008242  11FC 0024 2007                    53  	MOVE.B	#%00100100,PIACB   	
+00008248  4E75                              54  	RTS
+0000824A                                    55  
+0000824A                                    56  *******ISR INTERRUZIONE USART***************************************************************************
+0000824A                                    57  * Interruzione su RxRDY: la seriale ha ricevuto un carattere 
+0000824A                                    58  * mappata sulla linea 6, autovettore 30, indirizzo $78 in ROM
+0000824A                                    59  *******************************************************************************************************
+0000824A                                    60  
+00008700                                    61  	ORG $8700		
+00008700                                    62  
+00008700                                    63  INT6   	
+00008700  2F0B                              64  	MOVE.L  A3,-(A7)		;salvataggio registri
+00008702  2F0A                              65  	MOVE.L  A2,-(A7)
+00008704  2F09                              66  	MOVE.L  A1,-(A7)		
+00008706  2F08                              67  	MOVE.L  A0,-(A7)
+00008708  2F00                              68  	MOVE.L  D0,-(A7)
+0000870A  2F01                              69  	MOVE.L  D1,-(A7)
+0000870C  2F02                              70  	MOVE.L  D2,-(A7)
+0000870E  2F03                              71  	MOVE.L  D3,-(A7)
+00008710                                    72  
+00008710                                    73  	
+00008710  227C 00002002                     74  	MOVEA.L	#USARTD,A1		;registro dato USART
+00008716  207C 00008000                     75  	MOVEA.L	#MSG,A0			;indirizzo area di salvataggio
+0000871C  1239 00008020                     76  	MOVE.B	DIM,D1			;dimensione del messaggio
+00008722  1039 00008021                     77  	MOVE.B 	COUNT,D0		;contatore caratteri ricevuti
+00008728                                    78  		
+00008728  1191 0000                         79  RICEZ	MOVE.B 	(A1),(A0,D0)	;riceve un carattere e lo memorizza
+0000872C                                    80  	
+0000872C                                    81  	
+0000872C  5200                              82  	ADD.B 	#1,D0 			;incremento il contatore dei caratteri ricevuti 
+0000872E  13C0 00008021                     83  	MOVE.B	D0,COUNT
+00008734                                    84  
+00008734  B240                              85  	CMP	D0,D1				;se abbiamo ricevuto 32 caratteri procede con la trasmissione parallela dell'eco
+00008736  6700 0014                         86  	BEQ	INVIOECO
+0000873A                                    87  
+0000873A                                    88  FINE
+0000873A  261F                              89  	MOVE.L  (A7)+,D3		;ripristino registri 
+0000873C  241F                              90  	MOVE.L  (A7)+,D2
+0000873E  221F                              91  	MOVE.L  (A7)+,D1		
+00008740  201F                              92  	MOVE.L  (A7)+,D0
+00008742  205F                              93  	MOVE.L  (A7)+,A0
+00008744  225F                              94  	MOVE.L  (A7)+,A1
+00008746  245F                              95  	MOVE.L  (A7)+,A2
+00008748  265F                              96  	MOVE.L  (A7)+,A3
+0000874A                                    97  	
+0000874A  4E73                              98  	RTE		
+0000874C                                    99  	
+0000874C                                   100  *****************************************************************************************
+0000874C                                   101  
+0000874C                                   102  INVIOECO
+0000874C  13FC 0000 00008021               103  	MOVE.B	#$00,COUNT		;azzero il contatore degli elementi ricevuti
+00008754                                   104  	
+00008754  247C 00002007                    105  	MOVEA.L	#PIACB,A2		;indirizzo registro di controllo CRB
+0000875A  267C 00002006                    106  	MOVEA.L	#PIADB,A3		;indirizzo registro PRB
+00008760                                   107  		
+00008760  4242                             108  	CLR	D2	;appoggio
+00008762  4243                             109  	CLR	D3	;contatore locale elementi trasmessi
+00008764                                   110  
+00008764                                   111  
+00008764                                   112  INVIO	
+00008764  1413                             113  	MOVE.B	(A3),D2         ;lettura fittizia da PRB => serve per azzerare CRB7 dopo il primo carattere
+00008766  1418                             114  	MOVE.B	(A0)+,D2		;carattere corrente da trasferire in D2;
+00008768  1682                             115  	MOVE.B	D2,(A3)			;dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+0000876A                                   116  
+0000876A  5203                             117  	ADD.B	#1,D3			;incremento contatore elementi trasmessi
+0000876C                                   118  
+0000876C                                   119  ciclo	
+0000876C  1412                             120  	MOVE.B	(A2),D2			;In attesa di DATA ACKNOWLEDGE
+0000876E  0202 0080                        121  	ANDI.B	#$80,D2			;aspetta che CRB7 divenga 1
+00008772  67F8                             122  	BEQ	ciclo
+00008774                                   123  
+00008774  B243                             124  	CMP	D3,D1			;controlla se ho trasmesso tutti e 32 caratteri
+00008776  66EC                             125  	BNE	INVIO
+00008778                                   126  	
+00008778  4EF9 0000873A                    127  	JMP FINE
+0000877E                                   128  *****************************************************************************************
+0000877E                                   129  
+0000877E                                   130  	END	MAIN
+
+No errors detected
+No warnings generated

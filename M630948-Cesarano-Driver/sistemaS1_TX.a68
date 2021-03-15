@@ -1,0 +1,194 @@
+
+**********AREA DATI*********************************************************************************************
+
+	ORG	$8000
+	
+************TESTING******************
+*MSG1		DC.B	1,2,3,4			*
+*MSG2		DC.B	5,6,7,8			*
+*ECO1		DS.B	4				*
+*ECO2		DS.B	4				*
+*DIM		DC.B	4				*
+*************************************	
+	
+	
+MSG1		DC.B	1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32
+MSG2		DC.B	32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1
+ECO1		DS.B	32
+ECO2		DS.B	32
+
+DIM			DC.B	32		;dimensione del singolo messaggio
+MSGTOT		DC.B	2 		;totale dei messaggi (di 32byte) da inviare 
+MSGINV		DC.B	0 		;contatore messaggi (di 32byte) inviati 
+CONT		DC.B	0		;contatore dei caratteri di eco ricevuti nell'ambito del messaggio(si azzera ogni 32)
+
+ECOCHAR		DC.B	0		;offset dell'area di memoria ECO1 per salvare i caratteri ricevuti
+
+
+FLAG		DC.B	1		;flag che indica la ricezione di tutti i caratteri ECO e abilita la trasmissione di un nuovo messaggio
+
+
+***********AREA MAIN**********************************************************************************************
+
+	ORG    $8200
+
+USARTD		EQU		$2002		;registro dato USART
+USARTC		EQU		$2003		;registro di controllo USART
+PIADA		EQU   	$2004		;indirizzo di PIA-A dato, usato in input
+PIACA		EQU    	$2005		;indirizzo di PIA-A stato/controllo
+
+MAIN	
+	JSR	INITUSART	;inizializzazione USART
+	JSR	INITPIA		;inizializzazione PIA
+
+	MOVE.W	SR,D0		;legge il registro di stato
+	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+	MOVE.W	D0,SR		;pone liv int a 000
+
+
+	* salvataggio indirizzi utili nei registri interni
+	MOVEA.L	#USARTD,A1	
+	MOVEA.L	#USARTC,A2	
+	MOVEA.L	#MSG1,A0	
+	MOVE.B	DIM,D3			;dimensione singolo messaggio 
+	MOVE.B 	MSGTOT,D5		;messaggi totale da trasmettere
+	MOVE.B 	MSGINV,D6		;contatore messaggi correntemente inviati 
+
+	CLR	D1	;appoggio
+	CLR	D2	;contatore caratteri trasmessi
+	
+
+CHECKDSR	
+	MOVE.B	(A2),D0			;Controlla se è attivato il segnale DSR della USART ed in caso affermativo trasmette,
+	ANDI.B	#$80,D0			;altrimenti attende. Poichè la configurazione prevede che DTR=1
+	BEQ	CHECKDSR
+	
+
+STOP
+	MOVE.B FLAG,D4		;lettura del flag che abilita la trasmissione. 
+	CMPI #1,D4				
+	BNE STOP			;Attendiamo fin quando l'ECO non è stato completamente ricevuto	
+	
+	ANDI #$00,D4		;Se l'ECO è stato ricevuto completamente setto il flag a 0
+	MOVE.B D4,FLAG
+
+	CMP D5,D6			;Se ho trasmesso 2 messaggi mi metto in loop, altrimenti prosegue con la trasmissione
+	BEQ LOOP
+	
+	
+CHECKTxRDY	
+	MOVE.B	(A2),D0		;Controlla se è attivo TxRDY, che indica che la seriale è pronta a trasmettere un nuovo carattere
+	ANDI.B	#$01,D0		
+	BEQ		CHECKTxRDY		
+
+	MOVE.B	(A0)+,D1
+	MOVE.B	D1,(A1)		;invio il carattere sulla porta DATO della seriale
+	ADD.B	#1,D2		;incremento il contatore dei caratteri trasmessi
+	
+	CMP	D2,D3
+	BNE	CHECKTxRDY
+
+	
+	CLR	D2 				;azzero il contatore dei caratteri trasmessi (il cont è riferito al singolo messaggio)  
+
+	ADDI.B 	#$01,D6		
+	MOVE.B 	D6,MSGINV	;incremento il contatore dei messaggi inviati
+	JMP 	STOP		;mi metto in attesa che il flag abiliti la prossima trasmissione
+
+LOOP	JMP	LOOP
+
+***********INIZIALIZZAZIONE PERIFERICHE****************************************************************************
+
+INITUSART	
+	MOVE.B	#$5D,USARTC		;trasmissione asincrona, 8 bit di informazione bit di parità dispari e 2 bit di stop.  (registro MODE)
+	MOVE.B	#$23,USARTC		;abilita il trasmettitore e attiva i segnali di handshaking. (registro CONTROL)
+	RTS
+
+INITPIA
+	MOVE.B	#0,PIACA			;0 nel registro controllo: il prossimo accesso a PIADA (indirizzo pari) seleziona il registro direzione del porto A
+	MOVE.B	#$00,PIADA		    ;accede a DRA e pone DRA=0: le linee di A sono linee di input	
+	MOVE.B	#%00100101,PIACA  	;imposta il registro di controllo ponendo IRQA1=1 e IRQA2=1
+	RTS
+
+
+***********ISR INTERRUZIONE PIA-A***********************************************************************************
+* La pia-A ha ricevuto un carattere dalla pia-B partner. 
+* Interrupt di liv. 3, mappata sull'autovettore 27, indirizzo $6C della ROM, dove salvo l'entry della ISR ($8700)
+********************************************************************************************************************	
+	
+	ORG $8700		
+
+INT3    	
+	MOVE.L  A1,-(A7)		;salvataggio registri
+	MOVE.L  A0,-(A7)
+	MOVE.L  D0,-(A7)
+	MOVE.L  D1,-(A7)
+	MOVE.L  D2,-(A7)
+	MOVE.L  D3,-(A7)
+
+	* salvataggio indirizzi utili nei registri interni
+	MOVEA.L	#PIADA,A1
+	MOVEA.L	#ECO1,A0			;indirizzo di partenza area salvataggio ECO
+	MOVE.B	ECOCHAR,D0			;offset per salvare l'eco ricevuto nell'area di memoria ECO1
+	MOVE.B DIM,D1				;dim del singolo messaggio (32)
+	MOVE.B FLAG,D2				;flag che indica la completa ricezione dell'eco e abilita la successiva trasmissione
+	MOVE.B CONT,D3				;contatore dei caratteri di eco ricevuti (si azzera ogni 32)
+	
+	MOVE.B 	(A1),(A0,D0)	;acquisisce il carattere e lo trasferisce in memoria
+	
+	ADD.B	#1,D0			
+	ADD.B 	#1,D3			
+	MOVE.B	D0,ECOCHAR		;incrementa l'offset
+	MOVE.B	D3,CONT			;incrementa il contatore dei char ricevuti
+
+
+	CMP	D3,D1				;se abbiamo ricevuto 32 char, setta il flag ad 1
+	BNE	FINE
+
+	MOVE.B	#$00,CONT		;azzeramento contatore di messaggio
+	ORI 	#$01,D2			;set flag a 1
+	MOVE.B 	D2,FLAG		
+	
+
+FINE	
+	MOVE.L  (A7)+,D3		;ripristino registri 
+	MOVE.L  (A7)+,D2
+	MOVE.L  (A7)+,D1
+	MOVE.L  (A7)+,D0		
+	MOVE.L  (A7)+,A0
+	MOVE.L  (A7)+,A1
+	
+	RTE
+
+
+
+********ISR INTERRUZIONE USART*******************************************************************
+* Non è possibile disabilitare le interrupt sulla USAR in trasmissione dunque prevediamo un NOP
+* Interrupt di liv. 6, mappata sull'autovettore 30, indirizzo $78 della ROM, dove salvo l'entry della ISR ($8800)
+*************************************************************************************************
+
+	ORG $8800		
+	NOP
+	RTE
+
+
+
+	END	MAIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

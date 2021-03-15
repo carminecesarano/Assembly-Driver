@@ -1,0 +1,182 @@
+**********AREA DATI**********************************************************************************
+	
+	ORG	$8000
+	
+*******TESTING***************
+*MSG			DS.B	4	*	
+*DIM			DC.B	4	*
+*****************************
+
+MSG			DS.B	32		*area di memoria appoggio per il messaggio da inoltrare ad S1
+DIM			DC.B	32		*dimensione del singolo messaggio
+COUNT		DC.B	0 		*contatore dei caratteri ricevuti nell'ambito del messaggio (si azzera ogni 32)
+
+***********AREA MAIN**********************************************************************************
+	ORG    $8200
+
+USARTD	EQU    $2002	;indirizzo dato
+USARTC	EQU    $2003	;indirizzo stato/controllo
+PIADB	EQU    $2006	;indirizzo di PIA-B dato, usato in output 
+PIACB	EQU    $2007	;indirizzo di PIA-B controllo
+
+MAIN	
+	JSR	INITUSART	;inizializzazione USART
+	JSR	INITPIA		;inizializzazione PIA
+
+	MOVE.W	SR,D0		;legge il registro di stato
+	ANDI.W	#$D8FF,D0 	;maschera per reg stato (stato utente, int abilitati)
+	MOVE.W	D0,SR		;pone liv int a 000
+
+	MOVEA.L	#USARTC,A2	;indirizzo registro controllo/stato
+
+
+CHECKDSR	
+	MOVE.B	(A2),D0			;Controlla se è attivato il segnale DSR della USART ed in caso affermativo trasmette,
+	ANDI.B	#$80,D0			;altrimenti attende. Poichè la configurazione prevede che DTR=1
+	BEQ	CHECKDSR		
+
+
+LOOP  	JMP LOOP	;ciclo caldo dove il processore attende interrupt		
+	
+
+
+*********INIZIALIZZAZIONE PERIFERICHE*******************************************************************
+
+INITUSART	
+	MOVE.B	#$5D,USARTC		;trasmissione asincrona, 8 bit di informazione bit di parità dispari e 2 bit di stop.  (registro MODE)
+	MOVE.B	#$36,USARTC		;abilita ricevitore, cancella flags
+	RTS
+
+INITPIA	
+	MOVE.B	#0,PIACB			;seleziona il registro direzione di PIA porto B 
+	MOVE.B	#$FF,PIADB	  		;accede a DRB e pone DRA=1 : le linee di B sono linee di output	
+	MOVE.B	#%00100100,PIACB   	
+	RTS
+
+*******ISR INTERRUZIONE USART***************************************************************************
+* Interruzione su RxRDY: la seriale ha ricevuto un carattere 
+* mappata sulla linea 5, autovettore 29, indirizzo $74 in ROM
+*******************************************************************************************************
+
+	ORG $8700		
+
+INT5   	
+	MOVE.L  A3,-(A7)		;salvataggio registri
+	MOVE.L  A2,-(A7)
+	MOVE.L  A1,-(A7)		
+	MOVE.L  A0,-(A7)
+	MOVE.L  D0,-(A7)
+	MOVE.L  D1,-(A7)
+	MOVE.L  D2,-(A7)
+	MOVE.L  D3,-(A7)
+
+	
+	MOVEA.L	#USARTD,A1		;registro dato USART
+	MOVEA.L	#MSG,A0			;indirizzo area di salvataggio
+	MOVE.B	DIM,D1			;dimensione del messaggio
+	MOVE.B 	COUNT,D0		;contatore caratteri ricevuti
+		
+RICEZ	MOVE.B 	(A1),(A0,D0)	;riceve un carattere e lo memorizza
+	
+	
+	ADD.B 	#1,D0 			;incremento il contatore dei caratteri ricevuti 
+	MOVE.B	D0,COUNT
+
+	CMP	D0,D1				;se abbiamo ricevuto 32 caratteri procede con la trasmissione parallela dell'eco
+	BEQ	INVIOECO
+
+FINE
+	MOVE.L  (A7)+,D3		;ripristino registri 
+	MOVE.L  (A7)+,D2
+	MOVE.L  (A7)+,D1		
+	MOVE.L  (A7)+,D0
+	MOVE.L  (A7)+,A0
+	MOVE.L  (A7)+,A1
+	MOVE.L  (A7)+,A2
+	MOVE.L  (A7)+,A3
+	
+	RTE		
+	
+*****************************************************************************************
+
+INVIOECO
+	MOVE.B	#$00,COUNT		;azzero il contatore degli elementi ricevuti
+	
+	MOVEA.L	#PIACB,A2		;indirizzo registro di controllo CRB
+	MOVEA.L	#PIADB,A3		;indirizzo registro PRB
+		
+	CLR	D2	;appoggio
+	CLR	D3	;contatore locale elementi trasmessi
+
+
+INVIO	
+	MOVE.B	(A3),D2         ;lettura fittizia da PRB => serve per azzerare CRB7 dopo il primo carattere
+	MOVE.B	(A0)+,D2		;carattere corrente da trasferire in D2;
+	MOVE.B	D2,(A3)			;dato su bus di PIA porto B: dopo la scrittura di PRB, CB2 si abbassa
+
+	ADD.B	#1,D3			;incremento contatore elementi trasmessi
+
+ciclo	
+	MOVE.B	(A2),D2			;In attesa di DATA ACKNOWLEDGE
+	ANDI.B	#$80,D2			;aspetta che CRB7 divenga 1
+	BEQ	ciclo
+
+	CMP	D3,D1			;controlla se ho trasmesso tutti e 32 caratteri
+	BNE	INVIO
+	
+	JMP FINE
+*****************************************************************************************
+
+	END	MAIN
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
